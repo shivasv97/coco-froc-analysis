@@ -69,6 +69,7 @@ def update_scores(json_data: list, score_thres: float) -> list:
     for _, pred in enumerate(json_data):
         if pred['score'] > score_thres:
             preds.append(pred)
+    #print(preds)
     return preds
 
 
@@ -112,6 +113,10 @@ def get_iou_score(gt_box: list, pr_box: list) -> float:
     pr_area = pr_w * pr_h
 
     return intersection / (gt_area + pr_area - intersection)
+    # try:
+    #     return intersection / (gt_area + pr_area - intersection)
+    # except ZeroDivisionError as ze:
+    #     return 0.0
 
 
 def build_pr_id2annotations(pr: list) -> dict:
