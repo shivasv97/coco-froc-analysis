@@ -2,6 +2,8 @@
 
 FROC analysis for COCO annotations and Detectron(2) detection results. The COCO annotation style is defined [here](https://cocodataset.org/).
 
+The code has now been fixed to produce FROC plots based on a certain IoU threshold. 
+
 ### Installation
 
 ```bash
