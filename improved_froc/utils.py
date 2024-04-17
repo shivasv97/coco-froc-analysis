@@ -15,7 +15,7 @@ def filter_preds_on_conf_thres(pred_json_obj, score_thres):
     filtered_preds = []
     assert type(pred_json_obj) == list, "Unable to filter conf scores as the pred JSON obj is not a list."
     for pred_item in pred_json_obj:
-        if float(pred_item['score']) >= score_thres:
+        if float(pred_item['score']) > score_thres:
             filtered_preds.append(pred_item)
     return filtered_preds
 

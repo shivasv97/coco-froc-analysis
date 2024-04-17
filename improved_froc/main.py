@@ -67,6 +67,20 @@ def per_cat_sens_fpr_calculator(image_ids, cat_filtered_gt_annots, cat_filtered_
         # }
     return per_cat_per_img_stats
 
+def normal_image_sens_fpr_calculator(normal_img_ids, normal_preds, all_img_ids):
+    gt_normal_set = set(normal_img_ids)
+    pred_normal_set = set(normal_preds)
+    
+    TN_normal = gt_normal_set & pred_normal_set
+    FP_normal = gt_normal_set - pred_normal_set
+    FN_normal = pred_normal_set - gt_normal_set
+    
+    sens_normal = len(TN_normal)/len(gt_normal_set)
+    fpr_normal = len(FP_normal)/len(all_img_ids)
+    print(sens_normal, fpr_normal)
+    
+    return sens_normal, fpr_normal
+
 def plot_per_cat_froc_curve(cat_label, fpr_list, sens_list, save_dir, iou_thres, eval_thresholds, interp_sens):
     cat_label = cat_label.replace('/', '-')
     cat_label = cat_label.replace('.', '_')
@@ -119,11 +133,13 @@ def main():
     num_images = len(gt_image_ids)
     gt_cat_ids = gt_pred_category_id_consistency_check(gt_obj, pred_obj, IGNORE_STRICT_CHECK)
     cat_stats={}
+    normal_stats={}
     for conf_score_thres in tqdm(np.linspace(0, 1, num=10, endpoint=True, retstep=False, dtype=None, axis=0)):
         conf_score_filtered_preds = filter_preds_on_conf_thres(pred_obj, conf_score_thres)
         imgs_with_preds_set = set([x['image_id'] for x in conf_score_filtered_preds])
         normal_preds = list(set(gt_image_ids) - imgs_with_preds_set)
         cat_stats[conf_score_thres] = {}
+        normal_stats[conf_score_thres] = {}
         for category_id in gt_cat_ids:
             cat_filtered_gt_annots, cat_filtered_preds = category_filter(gt_obj['annotations'], conf_score_filtered_preds, category_id)
             per_cat_per_img_stats = per_cat_sens_fpr_calculator(gt_image_ids, cat_filtered_gt_annots, cat_filtered_preds, iou_thres)
@@ -140,10 +156,31 @@ def main():
             cat_stats[conf_score_thres][category_id] = {
             'sensitivity': sens_per_cat,
             'fpr': fpr_per_cat
-            }     
-    print(f'{cat_stats}')
-    per_cat_plot_dict = {}
+            }   
+    #     if len(normal_img_ids)>0:  
+    #         sens_normal, fpr_normal = normal_image_sens_fpr_calculator(normal_img_ids, normal_preds, gt_image_ids)
+    #         normal_stats[conf_score_thres] = {
+    #         'sensitivity': sens_normal,
+    #         'fpr': fpr_normal
+    #         }     
     
+    # if len(normal_img_ids)>0:  
+    #     normal_plot_dict = {}
+    #     normal_sens_list = []
+    #     normal_fpr_list = []
+    #     for conf_score in normal_stats.keys():
+    #         normal_sens_list.append(normal_stats[conf_score]['sensitivity'])
+    #         normal_fpr_list.append(normal_stats[conf_score]['fpr'])
+    #     normal_plot_dict['derived_normal'] = {
+    #         'sens_list':normal_sens_list,
+    #         'fpr_list':normal_fpr_list
+    #     }
+    #     normal_interp_sens = np.interp(eval_thresholds, np.array(normal_fpr_list)[::-1], np.array(normal_sens_list)[::-1])
+    #     plot_per_cat_froc_curve("Derived_normal", normal_fpr_list, normal_sens_list, save_dir, iou_thres, eval_thresholds, normal_interp_sens)
+    
+        
+    # print(f'{cat_stats}')
+    per_cat_plot_dict = {}
     for cat_id in gt_cat_ids:
         sens_list = []
         fpr_list = []
@@ -155,7 +192,7 @@ def main():
             'fpr_list':fpr_list
         }
         interp_sens = np.interp(eval_thresholds, np.array(fpr_list)[::-1], np.array(sens_list)[::-1])
-        print(gt_cat_id_to_labels[cat_id], interp_sens) 
+        # print(gt_cat_id_to_labels[cat_id], interp_sens) 
         
         plot_per_cat_froc_curve(gt_cat_id_to_labels[cat_id], fpr_list, sens_list, save_dir, iou_thres, eval_thresholds, interp_sens)
         
