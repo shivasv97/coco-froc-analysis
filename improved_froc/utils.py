@@ -45,7 +45,65 @@ def gt_normal_image_ids(gt_json_obj):
     normal_imgs = all_imgs - img_with_annot
     return list(normal_imgs)
 
-def iou(gt_bbox, pred_bbox):
+def iou(bb1, bb2):
+    """
+    Calculate the Intersection over Union (IoU) of two bounding boxes.
+
+    Parameters
+    ----------
+    bb1 : dict
+        Keys: {'x1', 'x2', 'y1', 'y2'}
+        The (x1, y1) position is at the top left corner,
+        the (x2, y2) position is at the bottom right corner
+    bb2 : dict
+        Keys: {'x1', 'x2', 'y1', 'y2'}
+        The (x, y) position is at the top left corner,
+        the (x2, y2) position is at the bottom right corner
+
+    Returns
+    -------
+    float
+        in [0, 1]
+    """
+    
+    bb1 = [bb1[0], bb1[1], bb1[2]+bb1[0], bb1[3]+bb1[1]]
+    bb2 = [bb2[0], bb2[1], bb2[2]+bb2[0], bb2[3]+bb2[1]]
+    
+    if not (bb1[0] < bb1[2]):
+        return 0.0
+    if not (bb1[1] < bb1[3]):
+        return 0.0
+    if not (bb2[0] < bb2[2]):
+        return 0.0
+    if not (bb2[1] < bb2[3]):
+        return 0.0
+
+    # determine the coordinates of the intersection rectangle
+    x_left = max(bb1[0], bb2[0])
+    y_top = max(bb1[1], bb2[1])
+    x_right = min(bb1[2], bb2[2])
+    y_bottom = min(bb1[3], bb2[3])
+
+    if x_right < x_left or y_bottom < y_top:
+        return 0.0
+
+    # The intersection of two axis-aligned bounding boxes is always an
+    # axis-aligned bounding box
+    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+
+    # compute the area of both AABBs
+    bb1_area = (bb1[2] - bb1[0] + 1) * (bb1[3] - bb1[1] + 1)
+    bb2_area = (bb2[2] - bb2[0] + 1) * (bb2[3] - bb2[1] + 1)
+
+    # compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    iou = intersection_area / float(bb1_area + bb2_area - intersection_area)
+    assert iou >= 0.0
+    assert iou <= 1.0
+    return iou
+
+def depr_iou(gt_bbox, pred_bbox): # remove depr_ from the function name here to use this function. Correspondingly, comment out the other function.
     """
     Calculate Intersection over Union (IoU) between two bounding boxes.
 
@@ -77,6 +135,7 @@ def iou(gt_bbox, pred_bbox):
     
     # Calculate intersection area
     intersection_area = np.maximum(0, x_right - x_left) * np.maximum(0, y_bottom - y_top)
+    
     
     # Calculate union area
     union_area = w1 * h1 + w2 * h2 - intersection_area
