@@ -48,7 +48,17 @@ def per_cat_per_image_sens_fpr_calculator(per_cat_per_image_gt_annots, per_cat_p
                 sens_fpr_table[i][j] = int(is_gt_or_eq_iou_thres(gt_bboxes[j], pred_bboxes[i], iou_thres))
                 
         num_TD_per_img_per_cat = np.sum(np.any(sens_fpr_table, axis=0)) # np.any makes sure that even overlapping predictions that are above conf thres and iou thres are NOT considered as FP detections. 
+        
+        
         num_FP_per_img_per_cat = np.sum(np.all(sens_fpr_table == 0, axis=1)) # np.all makes sure that a particular prediction is not a positive prediction for any GT in the image for that category.
+        
+        # # Make overlapped preds as FPs.
+        # num_TD_per_img_per_cat = np.sum(np.any(sens_fpr_table, axis=0)) # np.any makes sure that even overlapping predictions that are above conf thres and iou thres are NOT considered as FP detections. 
+        # if num_TD_per_img_per_cat > 1:
+        #     num_overlap_FP = num_TD_per_img_per_cat - 1
+        #     num_FP_per_img_per_cat += num_overlap_FP
+        #     num_TD_per_img_per_cat = 1
+            
         return num_TD_per_img_per_cat, num_FP_per_img_per_cat, TN_per_img_per_cat, gt_len
 
 def per_cat_sens_fpr_calculator(image_ids, cat_filtered_gt_annots, cat_filtered_preds, iou_thres):
@@ -103,7 +113,7 @@ def normal_image_sens_fpr_calculator(normal_img_ids, normal_preds, all_img_ids, 
     return Sens_normal, Specificity_normal
     # return Sens_normal, FPR_normal
 
-def plot_per_cat_froc_curve(cat_label, fpr_list, sens_list, save_dir, iou_thres, eval_thresholds, interp_sens, plot_eval_thres, eval_thres_markers, plot_sota_markers, sota_fpr_list, sota_sens_list, extrapolate_plot, plot_type='FROC'):
+def plot_per_cat_froc_curve(cat_label, fpr_list, sens_list, save_dir, iou_thres, eval_thresholds, interp_sens, plot_eval_thres, eval_thres_markers, plot_sota_markers, sota_fpr_list, sota_sens_list, extrapolate_plot, stat_info_string, plot_type='FROC'):
     cat_label = cat_label.replace('/', '-')
     cat_label = cat_label.replace('.', '_')
     save_dir = osp.join(save_dir, str(iou_thres).replace('.','_'))
@@ -143,10 +153,14 @@ def plot_per_cat_froc_curve(cat_label, fpr_list, sens_list, save_dir, iou_thres,
     if plot_type == "ROC":
         final_xticks = x_ticks_w_eval_thres[::-1]
     
-    sensitivities_text = "\n".join([f'Sens={interp_sens[i]:.4f}@{eval_thresholds[i]} FP/image' for i in range(len(eval_thresholds))])
+    sensitivities_text = "\n".join([f'Sens={interp_sens[i]:.4f}@{eval_thresholds[i]} FP/image' for i in range(len(eval_thresholds))])+f'\nSens={sens_list[0]:.4f}@{fpr_list[0]:.4f} FP/image'
+    if ((interp_sens is None) or (eval_thresholds is None)):
+        sensitivities_text = "\n".join([f'Sens={sens_list[0]:.4f}@{fpr_list[0]:.4f} FP/image'])
+        
     if plot_type == "ROC":
         sensitivities_text = "\n".join([f'Sens={interp_sens[i]:.4f}@{eval_thresholds[i]} Specificity' for i in range(len(eval_thresholds))])
     #print(sensitivities_text)
+    stat_info_string = sensitivities_text
     
     plt.plot(fpr_list, sens_list, linestyle='-')
     if eval_thres_markers:
@@ -204,6 +218,7 @@ def plot_per_cat_froc_curve(cat_label, fpr_list, sens_list, save_dir, iou_thres,
 
     plt.savefig(save_path)
     plt.close()
+    return stat_info_string
 
 def main():
     gt_obj = json_to_object(gt_file_path)
@@ -215,6 +230,7 @@ def main():
     gt_cat_ids = gt_pred_category_id_consistency_check(gt_obj, pred_obj, IGNORE_STRICT_CHECK)
     cat_stats={}
     normal_stats={}
+    normal_stat_details = {}
     for conf_score_thres in tqdm(np.linspace(0, 1, num=num_sample_points, endpoint=True, retstep=False, dtype=None, axis=0)):
         conf_score_filtered_preds = filter_preds_on_conf_thres(pred_obj, conf_score_thres)
         imgs_with_preds_set = set([x['image_id'] for x in conf_score_filtered_preds]) # diseased predictions
@@ -222,6 +238,7 @@ def main():
         # print(f'Diseased preds, normal preds, total images: {len(imgs_with_preds_set)}, {len(normal_preds)}, {len(gt_image_ids)}')
         cat_stats[conf_score_thres] = {}
         normal_stats[conf_score_thres] = {}
+        num_cats = len(gt_cat_ids)
         for category_id in gt_cat_ids:
             cat_filtered_gt_annots, cat_filtered_preds = category_filter(gt_obj['annotations'], conf_score_filtered_preds, category_id)
             per_cat_per_img_stats = per_cat_sens_fpr_calculator(gt_image_ids, cat_filtered_gt_annots, cat_filtered_preds, iou_thres)
@@ -238,7 +255,21 @@ def main():
             cat_stats[conf_score_thres][category_id] = {
             'sensitivity': sens_per_cat,
             'fpr': fpr_per_cat
-            }   
+            }  
+            
+        # For mean sensitivity and FPR calculation
+        net_stats = {}
+        for conf_thres, categs in cat_stats.items():
+            net_sens = 0
+            net_fpr = 0
+            for categ_id, categ in categs.items():
+                net_sens += categ['sensitivity']
+                net_fpr += categ['fpr']
+            net_stats[conf_thres] = {
+                'sensitivity': net_sens/num_cats,
+                'fpr': net_fpr/num_cats
+            }
+         
         if len(normal_img_ids)>0:  
             sens_normal, fpr_normal = normal_image_sens_fpr_calculator(normal_img_ids, normal_preds, gt_image_ids, imgs_with_preds_set) #TODO: change fpr_normal to specificity_normal as the function normal_image_sens_fpr_calculator() now returns the specificity instead of FPR.
             normal_stats[conf_score_thres] = {
@@ -249,6 +280,7 @@ def main():
     
     if len(normal_img_ids)>0:  
         # pprint.pprint(normal_stats)
+        normal_stat_string = ""
         normal_plot_dict = {}
         normal_sens_list = []
         normal_fpr_list = []
@@ -269,14 +301,17 @@ def main():
         normal_interp_sens = []
         # eval_thresholds = [x for x in og_eval_thresholds if x >= min(normal_fpr_list) and x <= max(normal_fpr_list)]
         # normal_interp_sens = np.interp(eval_thresholds, np.array(normal_fpr_list)[::-1], np.array(normal_sens_list)[::-1])
-        plot_per_cat_froc_curve("Derived_normal", normal_fpr_list, normal_sens_list, save_dir, iou_thres, eval_thresholds, normal_interp_sens, PLOT_EVAL_THRES, INSERT_EVAL_THRES_MARKERS, PLOT_SOTA_MARKERS, sota_points[sota_no_finding_id]['fpr_list'], sota_points[sota_no_finding_id]['sens_list'], EXTRAPOLATE_PLOT, "ROC")
+        normal_stat_string = plot_per_cat_froc_curve("Derived_normal", normal_fpr_list, normal_sens_list, save_dir, iou_thres, eval_thresholds, normal_interp_sens, PLOT_EVAL_THRES, INSERT_EVAL_THRES_MARKERS, PLOT_SOTA_MARKERS, sota_points[sota_no_finding_id]['fpr_list'], sota_points[sota_no_finding_id]['sens_list'], EXTRAPOLATE_PLOT, normal_stat_string,"ROC")
+        normal_stat_details['_normal_roc_'] = normal_stat_string
     
         
     # print(f'{cat_stats}')
+    per_cat_stat_details = {}
     per_cat_plot_dict = {}
     for cat_id in gt_cat_ids:
         sens_list = []
         fpr_list = []
+        stat_detail_string = ""
         for conf_score in cat_stats.keys():
             sens_list.append(cat_stats[conf_score][cat_id]['sensitivity'])
             fpr_list.append(cat_stats[conf_score][cat_id]['fpr'])
@@ -288,7 +323,25 @@ def main():
         interp_sens = np.interp(eval_thresholds, np.array(fpr_list)[::-1], np.array(sens_list)[::-1])
         # print(gt_cat_id_to_labels[cat_id], interp_sens) 
         
-        plot_per_cat_froc_curve(gt_cat_id_to_labels[cat_id], fpr_list, sens_list, save_dir, iou_thres, eval_thresholds, interp_sens, PLOT_EVAL_THRES, INSERT_EVAL_THRES_MARKERS, PLOT_SOTA_MARKERS, sota_points[cat_id]['fpr_list'], sota_points[cat_id]['sens_list'], EXTRAPOLATE_PLOT)
+        stat_detail_string = plot_per_cat_froc_curve(gt_cat_id_to_labels[cat_id], fpr_list, sens_list, save_dir, iou_thres, eval_thresholds, interp_sens, PLOT_EVAL_THRES, INSERT_EVAL_THRES_MARKERS, PLOT_SOTA_MARKERS, sota_points[cat_id]['fpr_list'], sota_points[cat_id]['sens_list'], EXTRAPOLATE_PLOT, stat_detail_string)
+        # print("Stat detail string: ", stat_detail_string)
+        per_cat_stat_details[gt_cat_id_to_labels[cat_id]] = stat_detail_string
+        
+    
+    net_sens_list = []
+    net_fpr_list = []
+    net_stat_detail_string = ""
+    for conf_score in net_stats.keys():
+        net_sens_list.append(net_stats[conf_score]['sensitivity'])
+        net_fpr_list.append(net_stats[conf_score]['fpr'])
+    per_cat_plot_dict['_mean_']= {
+            'sens_list':net_sens_list,
+            'fpr_list':net_fpr_list
+        }
+    net_eval_thresholds = [x for x in og_eval_thresholds if x >= min(net_fpr_list) and x <= max(net_fpr_list)]
+    net_interp_sens = np.interp(net_eval_thresholds, np.array(net_fpr_list)[::-1], np.array(net_sens_list)[::-1])
+    net_stat_detail_string = plot_per_cat_froc_curve("Mean FROC", net_fpr_list, net_sens_list, save_dir, iou_thres, net_eval_thresholds, net_interp_sens, PLOT_EVAL_THRES, INSERT_EVAL_THRES_MARKERS, PLOT_SOTA_MARKERS, [], [], EXTRAPOLATE_PLOT, net_stat_detail_string)
+    per_cat_stat_details['_mean_'] = net_stat_detail_string
         
     plot_info = {}
     plot_info.update(per_cat_plot_dict)
@@ -301,6 +354,17 @@ def main():
         json.dump(plot_info, outfile, indent=4)
     print(f'Plot info file at: {outfile_path}')
     
+    stat_info = {}
+    stat_info.update(per_cat_stat_details)
+    if len(normal_img_ids)>0:
+        plot_info.update(normal_stat_details)
+    
+    outstatfile_path = osp.join(save_dir,str(iou_thres).replace('.','_'), "stat_info.json")
+    with open(outstatfile_path, 'w') as outfile:
+        json.dump(stat_info, outfile, indent=4)
+    print(f'Stat info file at: {outstatfile_path}')
+    
+    
     return
 
 if __name__ == '__main__':
@@ -310,7 +374,7 @@ if __name__ == '__main__':
     # Boolean flags
     parser.add_argument('--IGNORE_STRICT_CHECK', type=bool, default=False, help='Description of IGNORE_STRICT_CHECK')
     parser.add_argument('--PLOT_EVAL_THRES', type=bool, default=True, help='Description of PLOT_EVAL_THRES')
-    parser.add_argument('--PLOT_SOTA_MARKERS', type=bool, default=True, help='Description of PLOT_SOTA_MARKERS')
+    parser.add_argument('--PLOT_SOTA_MARKERS', type=bool, default=False, help='Description of PLOT_SOTA_MARKERS')
     parser.add_argument('--INSERT_EVAL_THRES_MARKERS', type=bool, default=True, help='Description of INSERT_EVAL_THRES_MARKERS')
     parser.add_argument('--EXTRAPOLATE_PLOT', type=bool, default=False, help='Description of EXTRAPOLATE_PLOT')
 
